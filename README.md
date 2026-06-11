@@ -114,18 +114,15 @@ python scripts/create_anki_deck.py ./单字_命名/ 书法记忆卡.apkg
 
 ## 📦 输出示例
 
-### 裁切结果
+### 输入：原始书法作品
 
-```
-单字_命名/
-├── 春.jpg
-├── 江.jpg
-├── 月.jpg
-├── 江月.jpg        # 连笔字组
-├── 月_1.jpg       # 重复字
-├── 月_2.jpg
-└── ...
-```
+![原始书法作品示例](examples/raw_example.jpg)
+
+### 输出：裁切后的单字图片
+
+| 春 (Chūn) | 江 (Jiāng) | 月 (Yuè) |
+|-----------|-----------|-----------|
+| ![春](examples/output_chun.jpg) | ![江](examples/output_jiang.jpg) | ![月](examples/output_yue.jpg) |
 
 ### Anki 卡片效果
 
@@ -138,6 +135,8 @@ python scripts/create_anki_deck.py ./单字_命名/ 书法记忆卡.apkg
 ```
 [书法图片：春]
 ```
+
+> 💡 **提示**：导入 Anki 后，卡片正面显示汉字，背面显示对应的书法图片，方便记忆和临摹。
 
 ## ❓ 常见问题
 
