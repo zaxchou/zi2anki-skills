@@ -9,6 +9,8 @@
 - 🎨 **草书优化**：针对行草书法特点优化，保留连笔字组
 - 📚 **Anki 集成**：一键生成 `.apkg` 记忆卡包，直接导入 Anki
 - 🔍 **视觉识别**：利用多模态 AI 自动识别字符内容并命名
+- 🔴 **印章过滤**：自动检测并跳过红色印章区域
+- 🗞️ **背景过滤**：自动过滤空白纸区域和低对比度噪声
 
 ## 📂 目录结构
 
@@ -17,10 +19,10 @@ calligraphy-extractor/
 ├── SKILL.md              # WorkBuddy Skill 定义文件
 ├── README.md             # 本文件
 ├── scripts/
-│   ├── extract_chars.py  # 核心裁切脚本
+│   ├── extract_chars.py  # 核心裁切脚本 (v34)
 │   ├── create_anki_deck.py  # Anki 卡包生成脚本
 │   └── create_grid.py   # 缩略图网格生成（辅助工具）
-└── examples/            # 示例图片和输出（可选）
+└── examples/            # 示例图片和输出
 ```
 
 ## 🚀 使用方法
@@ -47,7 +49,7 @@ calligraphy-extractor/
 #### 1. 安装依赖
 
 ```bash
-pip install opencv-python pillow genanki
+pip install opencv-python pillow numpy genanki
 ```
 
 #### 2. 裁切单字
@@ -60,8 +62,8 @@ python scripts/extract_chars.py ./书法图片/ 3 512
 ```
 
 **输出**：
-- `单字_v29/`：裁切后的单字图片
-- `cell_positions_v29.json`：裁切位置信息（调试用）
+- `单字_v512/`：裁切后的单字图片（512x512 方形画布）
+- `cell_positions_单字_v512.json`：裁切位置信息（调试用）
 
 #### 3. 识别并命名（需要 WorkBuddy 多模态能力）
 
@@ -88,13 +90,15 @@ python scripts/create_anki_deck.py ./单字_命名/ 书法记忆卡.apkg
 
 ## 🎯 算法特点
 
-### 裁切算法（v29）
+### 裁切算法（v34）
 
-1. **自适应列检测**：基于投影法自动识别列边界
-2. **连通域分析**：精确提取字符轮廓，避免切碎连笔字
-3. **Y 坐标聚类**：智能合并同一字符的分散笔画
-4. **边距保护**：上下扩展 30% 边距，确保小笔画（点、挑）不被切掉
-5. **去白边**：直接等比例缩放，无白底填充，字符占满画布
+1. **OTSU 二值化** + 自适应闭运算（自动尝试 4 种 kernel 尺寸）
+2. **连通域检测** + Y 坐标聚类合并（宽松条件，保留小笔画）
+3. **水平投影深谷分割**（对过高区域尝试分割，避免强行拆分连笔字组）
+4. **Tight Crop v34**：非白像素检测（`< 235`）+ CLAHE 对比度增强，保留淡墨笔画
+5. **印章过滤**：HSV 色彩空间检测红色像素（红色占比 > 3% 判定为印章，自动跳过）
+6. **背景过滤**：检测低对比度区域（标准差 < 15）或墨迹占比极低（< 0.3%），自动跳过
+7. **100% 填充画布**：字符完全填满 512x512 方形画布，不留白边
 
 ### Anki 卡包生成（v4）
 
@@ -104,13 +108,17 @@ python scripts/create_anki_deck.py ./单字_命名/ 书法记忆卡.apkg
 
 ## ⚙️ 参数调优
 
+在 `scripts/extract_chars.py` 顶部可调整以下参数：
+
 | 参数 | 默认值 | 说明 | 调优建议 |
 |------|--------|------|----------|
-| `COLS` | 3 | 书法作品列数 | 根据作品实际列数调整 |
 | `CELL_SIZE` | 512 | 输出图片尺寸 | 如需更高清可设为 1024 |
-| `PAD_RATIO` | 0.08 | 字符边距比例 | 草书连笔多变，建议 0.05-0.15 |
-| `Y_MERGE_OVERLAP` | 0.15 | Y 重叠合并阈值 | 连笔多可降至 0.10，字迹疏朗可升至 0.25 |
-| `Y_MERGE_GAP` | 0.50 | Y 间距合并阈值 | 同上 |
+| `N_COLS` | 3 | 书法作品列数 | 根据作品实际列数调整 |
+| `TARGET_FILL` | 1.0 | 字符填充画布比例 | 1.0 = 100% 填充（无白边），0.8 = 80% 填充（留白边） |
+| `PAD_RATIO` | 0.0 | Tight crop 边距比例 | 0.0 = 无白边，0.05 = 5% 边距 |
+| `Y_MERGE_OVERLAP` | 0.05 | Y 重叠合并阈值 | 连笔多可降至 0.03，字迹疏朗可升至 0.10 |
+| `Y_MERGE_GAP` | 0.20 | Y 间距合并阈值 | 同上 |
+| `EXCLUDE_FILES` | `['v29_vs_v30_comparison.jpg']` | 排除非源图 | 可添加其他需要排除的文件名 |
 
 ## 📦 输出示例
 
@@ -120,9 +128,9 @@ python scripts/create_anki_deck.py ./单字_命名/ 书法记忆卡.apkg
 
 ### 输出：裁切后的单字图片
 
-| 春 (Chūn) | 江 (Jiāng) | 月 (Yuè) |
+| 照 (Zhào) | 流 (Liú) | 不 (Bù) |
 |-----------|-----------|-----------|
-| ![春](examples/output_chun.jpg) | ![江](examples/output_jiang.jpg) | ![月](examples/output_yue.jpg) |
+| ![照](examples/output_zhao.jpg) | ![流](examples/output_liu.jpg) | ![不](examples/output_bu.jpg) |
 
 ### Anki 卡片效果
 
@@ -142,11 +150,11 @@ python scripts/create_anki_deck.py ./单字_命名/ 书法记忆卡.apkg
 
 ### Q1：裁切出来的字不完整？
 
-**A**：尝试调整 `PAD_RATIO` 参数（增大至 0.15）或 `Y_MERGE_OVERLAP`（降至 0.10）。
+**A**：尝试调整 `PAD_RATIO` 参数（增大至 0.05）或 `Y_MERGE_OVERLAP`（降至 0.03）。
 
 ### Q2：连笔字组被强行拆分？
 
-**A**：这是已知限制。算法会尽量保留连笔字组，但过度连笔可能无法识别。建议手动调整输出。
+**A**：v34 算法已优化，对过高区域（> 1.3 倍字高）才尝试水平投影分割，避免过度拆分。如仍有问题，可手动调整输出。
 
 ### Q3：Anki 导入后图片不显示？
 
@@ -158,6 +166,14 @@ python scripts/create_anki_deck.py ./单字_命名/ 书法记忆卡.apkg
 ### Q4：如何批量处理多张书法作品？
 
 **A**：可以编写批处理脚本，循环调用 `extract_chars.py`。
+
+### Q5：印章被当成字提取了？
+
+**A**：v34 已内置印章过滤功能（HSV 检测红色像素），自动跳过印章区域。
+
+### Q6：输出的图片有白边？
+
+**A**：v34 默认 `TARGET_FILL=1.0` 和 `PAD_RATIO=0.0`，字符完全填满画布。如有白边，检查参数是否被修改。
 
 ## 🤝 贡献指南
 
