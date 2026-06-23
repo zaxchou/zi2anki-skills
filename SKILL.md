@@ -15,19 +15,28 @@ description: >
 分三步，依次执行：
 
 ```
-步骤 1：裁切单字图片（extract_chars.py）
+步骤 1：裁切单字图片（推荐 v48：scripts/extract_chars_v48.py）
 步骤 2：视觉识别并重命名图片
 步骤 3：生成 Anki .apkg 文件（create_anki_deck.py）
 ```
+
+> **版本选择**：推荐使用 `extract_chars_v48.py`（v48 算法）。
+> v48 相比 v44 的核心改进：
+> - 增强印章检测（HSV 红色 + 形状宽高比检查，减少漏检）
+> - 小孤立笔画归并（上方小点如"生"、"空"的头部自动归并到下方字符）
+> - 保留 v44 的核心：字符 + 外扩 → 方形 + 真实背景
+>
+> v44（`extract_chars_v44.py`）是上一版本：印章检测较弱（仅 HSV 红色比例）。
+> v34（`extract_chars.py`）是早期版本：使用固定 235 阈值 + CLAHE，会有白边。仅在兼容性需要时使用。
 
 ---
 
 ## 步骤 1：裁切单字图片
 
-### 使用方法
+### 推荐：v48 版本
 
 ```bash
-python scripts/extract_chars.py <图片目录> [列数] [输出尺寸]
+python scripts/extract_chars_v48.py <图片目录> [列数] [输出尺寸] [外扩像素] [小笔画阈值]
 ```
 
 **参数：**
@@ -36,35 +45,45 @@ python scripts/extract_chars.py <图片目录> [列数] [输出尺寸]
 | 图片目录 | （必填） | 包含书法图片的文件夹 |
 | 列数 | `3` | 每行几个字（竖排右到左） |
 | 输出尺寸 | `512` | 输出图片的像素尺寸 |
+| 外扩像素 | `10` | 字符四周外扩像素（用于扩成方形） |
+| 小笔画阈值 | `100` | 小于此像素的孤立笔画会尝试归并到下方字符 |
 
 **示例：**
 ```bash
-# 基础用法（3列，512px）
-python scripts/extract_chars.py ./书法图片/
+# 基础用法（3列，512px，10px外扩）
+python scripts/extract_chars_v48.py ./书法图片/
 
 # 4列布局
-python scripts/extract_chars.py ./书法图片/ 4
+python scripts/extract_chars_v48.py ./书法图片/ 4
 
-# 高分辨率输出（1024px）
-python scripts/extract_chars.py ./书法图片/ 3 1024
+# 高分辨率输出（1024px, 20px外扩）
+python scripts/extract_chars_v48.py ./书法图片/ 3 1024 20
 ```
 
-### 输出
+**输出：**
+- 裁切结果：`单字_v<尺寸>_v48/` 文件夹（如 `单字_v512_v48/`）
+- 位置信息：`cell_positions_单字_v<尺寸>_v48.json`（用于调试）
 
-- 裁切结果：`单字_v<尺寸>/` 文件夹（如 `单字_v512/`）
-- 位置信息：`cell_positions_单字_v<尺寸>.json`（用于调试）
+**v48 算法说明：**
+1. OTSU 二值化 + 闭运算（连通域检测）
+2. Y 坐标聚类合并（宽松条件：保留点/偏旁等小笔画）
+3. **小孤立笔画归并**：宽/高 < 100px 的孤立 group 自动归并到下方字符
+4. 印章过滤（HSV 红色 + 形状宽高比检测）
+5. **核心：从整张原图取字符 + 周围背景 → 扩成方形（max char dim + 2*外扩px）**
+6. **居中放 512x512，100% 填充**
+7. **背景从原图取真实纸纹**（不是 paper_color 也不是纯白）
+8. 越界部分用边像素平铺
+9. 背景过滤（低墨迹比例/低对比度）
 
-### 算法说明
+### 旧版：v44（不推荐，印章检测较弱）
 
-核心策略（v34，当前最新版本）：
-1. **OTSU 二值化** + 自适应闭运算（自动尝试多种 kernel 尺寸：(5,5)→(35,70)）
-2. **连通域检测** + Y 坐标聚类合并（宽松条件：`y_overlap > 5%` 或 `y_gap < 20%`，保留上方点、下方偏旁等小笔画）
-3. **水平投影深谷分割**（对过高区域 `>1.3倍字高` 尝试分割，深度阈值 `>0.20`）
-4. **tight crop v34**：非白像素检测（`< 235`），配合 CLAHE 对比度增强，保留淡墨笔画；`PAD_RATIO=0`，不留白边
-5. **印章过滤**：HSV 色彩空间检测红色像素（红色占比 `> 3%` 判定为印章，自动跳过）
-6. **背景过滤**：低对比度检测（标准差 `< 15`）或墨迹占比极低（`< 0.3%`），自动跳过空白纸区域
-7. **100% 填充画布**：`TARGET_FILL=1.0`，字符完全填满 512×512 方形画布，不留白边
-8. **排除非源图**：自动过滤对比图等非书法图片（如 `v29_vs_v30_comparison`）
+```bash
+python scripts/extract_chars_v44.py <图片目录> [列数] [输出尺寸] [外扩像素]
+```
+
+v44 算法与 v48 类似，但：
+- 印章检测仅用 HSV 红色比例（无形状检查），可能漏检黑色/深色印章
+- 无小孤立笔画归并，可能出现"生"字被拆成两半的情况
 
 ---
 
@@ -173,12 +192,15 @@ pip install genanki
 
 | 问题 | 调什么 | 方向 |
 |------|---------|------|
-| 字切得太碎（连笔字被强行拆分） | `detect_char_regions()` 中的 Y 聚类合并条件 | 放宽（`y_overlap` 阈值降低，`y_gap` 阈值升高） |
+| 字切得太碎（连笔字被强行拆分） | `detect_char_regions_v48()` 中的 Y 聚类合并条件 | 放宽（`y_overlap` 阈值降低，`y_gap` 阈值升高） |
 | 漏字（淡墨/细笔画被过滤） | `min_area` / `min_height` | 降低阈值 |
 | 印章/背景被当成字提取出来 | `is_seal()` / `is_background()` | 调整阈值（`red_ratio` / `std_threshold` / `ink_threshold`） |
 | 图片显示太小 | `CELL_SIZE` | 增大（当前 512，可改 1024） |
 | 列数识别错误 | 命令行第 2 个参数 | 手动指定（如 `4` 表示 4 列） |
-| 字符留白太多 | `TARGET_FILL` / `PAD_RATIO` | `TARGET_FILL=1.0` + `PAD_RATIO=0.0` = 100% 填充无白边 |
+| 字符留白太多 | `TARGET_FILL` / `PAD_RATIO` | `TARGET_FILL=1.0` + `PAD_RATIO=0.0` = 100% 填充无白边（v34） |
+| 字符有白边（v34 问题） | 改用 v48 | v48 字符 + 外扩 = 方形 + 真实背景 |
+| 外扩范围不够（v48） | `EXPAND_PX` | 增大到 15~20（v48 默认 10） |
+| 上方小点未归并到字符 | `SMALL_THR` | 调整小笔画阈值（默认 100px） |
 
 ---
 
@@ -210,13 +232,15 @@ pip install genanki
 skills/calligraphy-extractor/
 ├── SKILL.md                    # 本文档
 ├── scripts/
-│   ├── extract_chars.py        # 步骤 1：裁切单字（v34）
-│   ├── create_anki_deck.py   # 步骤 3：生成 .apkg
-│   └── create_grid.py         # 辅助：生成缩略图网格
-├── examples/                  # 示例图片
-├── assets/                    # 资源文件
-├── references/                # 参考文档
-└── README.md                 # 用户文档
+│   ├── extract_chars.py        # 步骤 1：裁切单字（v34 旧版，仅作兼容性保留）
+│   ├── extract_chars_v44.py   # 步骤 1：裁切单字（v44 上一版）
+│   ├── extract_chars_v48.py    # 步骤 1：裁切单字（v48 推荐版）✅
+│   ├── create_anki_deck.py     # 步骤 3：生成 .apkg
+│   └── create_grid.py          # 辅助：生成缩略图网格
+├── examples/                   # 示例图片
+├── assets/                     # 资源文件
+├── references/                 # 参考文档
+└── README.md                   # 用户文档
 ```
 
 ---
@@ -234,3 +258,6 @@ skills/calligraphy-extractor/
 9. **背景纸图被当成字提取**：没有背景过滤 → 解决：v33 新增 `is_background()` 函数（低对比度 + 墨迹占比）
 10. **非源图（如对比图）被处理**：没有排除机制 → 解决：v34 新增 `EXCLUDE_FILES` 配置
 11. **输出图片留白太多**：`TARGET_FILL=0.80` + `PAD_RATIO=0.08` → 解决：v33 改为 `TARGET_FILL=1.0` + `PAD_RATIO=0.0`（100% 填充无白边）
+12. **v34 100% 填充但字符有白边**：紧贴墨色 bbox 后缩放到 512x100%，扁矩形字符会留白 → 解决：v44 改为字符 + 10px 外扩 → 扩成方形 → 居中放 512x512
+13. **v44 误用 paper_color 填充**：v40/v41 用原图最亮区均值作为背景色，会出现"色块"边界 → 解决：v44 直接从原图取真实背景（不只是颜色）
+14. **中文路径写入失败**：`cv2.imwrite` 不支持中文路径 → 解决：用 `cv2.imencode + buf.tofile`（v44 统一）
